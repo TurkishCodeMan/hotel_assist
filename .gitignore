@@ -1,0 +1,84 @@
+# Python ile ilgili dosyalar
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+*.json
+
+# Sanal ortam
+venv/
+env/
+ENV/
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE ayarları
+.idea/
+.vscode/
+*.swp
+*.swo
+.project
+.pydevproject
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# API anahtarları ve kimlik bilgileri
+config.ini
+secrets.json
+credentials.json
+token.json
+*.pem
+*.key
+
+# Derleme ortamı ve dağıtım dosyaları
+node_modules/
+package-lock.json
+yarn.lock
+/.pnp
+.pnp.js
+
+# Çıktı ve sonuç dosyaları
+output/
+results/
+data/processed/ # Kimlik bilgileri ve hassas dosyalar
+google_credentials.json
+*.pem
+*.key
+.env
+secrets.json
+
+# JSON istisnaları
+!package.json
+!tsconfig.json
+!package-lock.json

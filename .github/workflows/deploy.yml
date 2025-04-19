@@ -1,0 +1,36 @@
+   name: Otel Asistanı Deployment
+
+   on:
+     push:
+       branches: [ main, master ]
+     workflow_dispatch:
+
+   jobs:
+     deploy:
+       runs-on: ubuntu-latest
+       steps:
+         - name: Kod Kopyalama
+           uses: actions/checkout@v3
+         
+         - name: Python Kurulumu
+           uses: actions/setup-python@v4
+           with:
+             python-version: '3.9'
+             
+         - name: Bağımlılıkları Yükleme
+           run: |
+             python -m pip install --upgrade pip
+             pip install -r requirements.txt
+         
+         # YÖNTEM 1: Credentials dosyasını oluştur
+         - name: Google Credentials Dosyası Oluşturma
+           run: |
+             echo '${{ secrets.GOOGLE_CREDENTIALS }}' > google_credentials.json
+           
+         # YÖNTEM 2: Çevre değişkeni olarak kullan
+         - name: Uygulama Çalıştırma
+           env:
+             GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+           run: python streamlit_fix.py
+
+
