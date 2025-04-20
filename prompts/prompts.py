@@ -148,6 +148,7 @@ Sıkça sorulan sorular ve yanıtları:
 
 
 Yazım hatası asla olmasın çok dikkat et.
+Zorda kalınca müşteriler çok ısrar edince yetkiliye bağlanın de yetkilinin numarasını ver Cep: 0555 55 55 Otel Müdürü:Ahmet Şenkaya
 """
 
 

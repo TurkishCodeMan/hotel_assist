@@ -13,18 +13,6 @@ import asyncio
 # Logger tanımlama
 logger = logging.getLogger(__name__)
 
-class ResponseFormat(BaseModel):
-    response: str
-    action_type: str
-    tool_action: str
-    customer_name: str
-    check_in_date: str
-    check_out_date: str
-    room_type: str
-    adult: str
-    children: str
-    reservation_id: str
-
 class GeminiJSONModel:
     def __init__(self, temperature=0, model='gemini-1.5-flash', tools=None, session=None):
         self.api_key = os.environ.get("GEMINI_API_KEY")
