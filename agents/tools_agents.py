@@ -10,15 +10,15 @@ import logging
 from typing import Dict, Any, Optional
 
 from agents.agents import Agent
-from services.sheets_service import (
-
-    get_all_reservations,
-    add_reservation,
-    update_reservation,
-    delete_reservation,
-    check_availability,
-    get_reservations_by_name
-)
+# Rezervasyon işlemleri için gerekli fonksiyonlar
+#from services.sheets_service import (
+#    get_all_reservations,  # Tüm rezervasyonları getir
+#    add_reservation,       # Yeni rezervasyon ekle
+#    update_reservation,    # Rezervasyon güncelle
+#    delete_reservation,    # Rezervasyon sil
+#    check_availability,    # Müsaitlik kontrolü
+#    get_reservations_by_name  # İsme göre rezervasyon getir
+#)
 from states.state import AgentGraphState
 from langchain_core.messages import HumanMessage
 

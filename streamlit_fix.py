@@ -56,6 +56,12 @@ def initialize_session_state():
         st.session_state.max_connection_attempts = 3
         st.session_state.connection_timeout = 30  # Saniye cinsinden
         st.session_state.last_reset_time = time.time()
+        # WhatsApp Web MCP bağlantısı için durum değişkenleri
+        st.session_state.whatsapp_web_connection_id = None
+        st.session_state.whatsapp_web_connection_timestamp = 0
+        st.session_state.whatsapp_web_connection_active = False
+        st.session_state.whatsapp_web_connection_attempts = 0
+        st.session_state.whatsapp_web_session = None
 
 @asynccontextmanager
 async def managed_mcp_connection(mcp_path):
@@ -129,6 +135,69 @@ async def managed_mcp_connection(mcp_path):
                 # Bağlantı zaten kapalı olabilir, durumu güncelle
                 st.session_state.connection_active = False
 
+@asynccontextmanager
+async def managed_whatsapp_web_mcp_connection():
+    """Yeni WhatsApp Web MCP bağlantı yöneticisi"""
+    connection_id = int(time.time() * 1000)  # Milisaniye cinsinden timestamp
+    st.session_state.whatsapp_web_connection_id = connection_id
+    st.session_state.whatsapp_web_connection_timestamp = time.time()
+    st.session_state.whatsapp_web_connection_attempts += 1 if hasattr(st.session_state, 'whatsapp_web_connection_attempts') else 1
+    
+    logger.info(f"WhatsApp Web MCP bağlantısı başlatılıyor (ID: {connection_id})")
+    
+    stack = AsyncExitStack()
+    session = None
+    tools = []
+    
+    try:
+        command = "npx"
+        server_params = StdioServerParameters(command=command, args=["-y", "mcp-whatsapp-web"])
+        
+        # Asenkron kaynak yönetimi için stack kullanımı
+        await stack.__aenter__()
+        
+        # MCP istemci akışını oluştur
+        client_stream = stdio_client(server_params)
+        stdio, write = await stack.enter_async_context(client_stream)
+        
+        # ClientSession oluştur ve başlat
+        session = ClientSession(stdio, write)
+        await stack.enter_async_context(session)
+        
+        await session.initialize()
+        logger.info(f"WhatsApp Web MCP oturumu başlatıldı (ID: {connection_id})")
+        
+        # Kullanılabilir araçları al
+        tools_response = await session.list_tools()
+        tools = tools_response.tools
+        logger.info(f"WhatsApp Web MCP araçları yüklendi: {len(tools)} araç bulundu")
+        
+        # Bağlantı durumunu güncelle
+        st.session_state.whatsapp_web_connection_active = True
+        st.session_state.whatsapp_web_connection_attempts = 0  # Başarılı bağlantı olduğu için sıfırla
+        
+        # Context manager değerlerini döndür
+        yield tools, session
+        
+    except Exception as e:
+        # Bağlantı başarısız olduğunda oturum durumunu güncelle
+        logger.exception(f"WhatsApp Web MCP bağlantı hatası (ID: {connection_id}): {e}")
+        st.session_state.whatsapp_web_connection_active = False
+        yield [], None
+        
+    finally:
+        # Context çıkışında kaynakları temizle
+        if connection_id == st.session_state.whatsapp_web_connection_id:  # Hala aynı bağlantı ID ise
+            try:
+                logger.info(f"WhatsApp Web MCP bağlantısı kapatılıyor (ID: {connection_id})")
+                await stack.__aexit__(None, None, None)
+                st.session_state.whatsapp_web_connection_active = False
+                logger.info(f"WhatsApp Web MCP bağlantısı başarıyla kapatıldı (ID: {connection_id})")
+            except Exception as e:
+                logger.error(f"WhatsApp Web MCP bağlantısını kapatırken hata (ID: {connection_id}): {e}")
+                # Bağlantı zaten kapalı olabilir, durumu güncelle
+                st.session_state.whatsapp_web_connection_active = False
+
 async def reset_connection_if_needed():
     """Gerekirse bağlantıyı sıfırla"""
     current_time = time.time()
@@ -180,72 +249,86 @@ async def display_main_ui(state):
 
         with st.spinner("Yanıt hazırlanıyor..."):
             # Yeni bağlantı yönetimi yaklaşımı kullanılıyor
-            async with managed_mcp_connection(st.session_state.mcp_path) as (tools, session, workflow):
-                if not session or not workflow:
-                    st.error("MCP sunucusuna bağlanılamadı. Lütfen sayfayı yenileyip tekrar deneyin.")
-                    st.session_state.conversation.append(("assistant", "Bağlantı hatası. Lütfen sayfayı yenileyip tekrar deneyin."))
-                    return
-                
-                try:
-                    # İş akışını çalıştır
-                    last_event = None
-                    async for event in workflow.astream(dict_inputs, {"recursion_limit": iterations}):
-                        last_event = event
+            async with managed_mcp_connection(st.session_state.mcp_path) as (mcp_tools, mcp_session, workflow):
+                async with managed_whatsapp_web_mcp_connection() as (whatsapp_web_tools, whatsapp_web_session):
+                    if not mcp_session or not workflow:
+                        st.error("MCP sunucusuna bağlanılamadı. Lütfen sayfayı yenileyip tekrar deneyin.")
+                        st.session_state.conversation.append(("assistant", "Bağlantı hatası. Lütfen sayfayı yenileyip tekrar deneyin."))
+                        return
+                    
+                    if not whatsapp_web_session:
+                        logger.warning("WhatsApp Web MCP sunucusuna bağlanılamadı, sadece ana MCP kullanılacak.")
+                        combined_tools = mcp_tools
+                    else:
+                        combined_tools = mcp_tools + whatsapp_web_tools
+                        st.session_state.whatsapp_web_session = whatsapp_web_session
 
-                    if last_event and "end" in last_event:
-                        st.session_state.session_state = last_event["end"]
-                        final_response = ""
+                    try:
+                        # İş akışını güncelle
+                        graph = create_graph(server=server, model=model, model_endpoint=model_endpoint, 
+                                            tools=combined_tools, session=mcp_session)
+                        workflow = compile_workflow(graph)
+                        st.session_state.workflow = workflow
+                        
+                        # İş akışını çalıştır
+                        last_event = None
+                        async for event in workflow.astream(dict_inputs, {"recursion_limit": iterations}):
+                            last_event = event
 
-                        if "reservation_response" in last_event["end"]:
-                            res = last_event["end"]["reservation_response"]
-                            if isinstance(res, list) and res:
-                                res = res[-1]  # Son yanıtı al
-                                
-                            # İki farklı yanıt formatını kontrol et
-                            if hasattr(res, "content"):
-                                content = res.content
-                            elif isinstance(res, dict) and "content" in res:
-                                content = res["content"]
-                            else:
-                                content = str(res)
-                                
-                            # İki olası durumu değerlendir:
-                            # 1. İçerik zaten JSON formatında olabilir
-                            # 2. İçerik düz metin olabilir
-                            try:
-                                if isinstance(content, str):
-                                    # Eğer JSON-benzeri bir string ise, parse et
-                                    if content.strip().startswith('{') and content.strip().endswith('}'):
-                                        parsed = safe_parse_message(content)
-                                        if "response" in parsed:
-                                            final_response = clean_json_text(parsed["response"])
+                        if last_event and "end" in last_event:
+                            st.session_state.session_state = last_event["end"]
+                            final_response = ""
+
+                            if "reservation_response" in last_event["end"]:
+                                res = last_event["end"]["reservation_response"]
+                                if isinstance(res, list) and res:
+                                    res = res[-1]  # Son yanıtı al
+                                    
+                                # İki farklı yanıt formatını kontrol et
+                                if hasattr(res, "content"):
+                                    content = res.content
+                                elif isinstance(res, dict) and "content" in res:
+                                    content = res["content"]
+                                else:
+                                    content = str(res)
+                                    
+                                # İki olası durumu değerlendir:
+                                # 1. İçerik zaten JSON formatında olabilir
+                                # 2. İçerik düz metin olabilir
+                                try:
+                                    if isinstance(content, str):
+                                        # Eğer JSON-benzeri bir string ise, parse et
+                                        if content.strip().startswith('{') and content.strip().endswith('}'):
+                                            parsed = safe_parse_message(content)
+                                            if "response" in parsed:
+                                                final_response = clean_json_text(parsed["response"])
+                                            else:
+                                                # JSON var ama response alanı yok - ayrıştırma sorunu olabilir
+                                                # ham içeriği göster
+                                                final_response = clean_json_text(content)
                                         else:
-                                            # JSON var ama response alanı yok - ayrıştırma sorunu olabilir
-                                            # ham içeriği göster
+                                            # Düz metin yanıtı - doğrudan göster
                                             final_response = clean_json_text(content)
                                     else:
-                                        # Düz metin yanıtı - doğrudan göster
-                                        final_response = clean_json_text(content)
-                                else:
-                                    # String olmayan veri tipi - metne dönüştür
+                                        # String olmayan veri tipi - metne dönüştür
+                                        final_response = clean_json_text(str(content))
+                                except Exception as e:
+                                    logger.error(f"Yanıt ayrıştırma hatası: {str(e)}")
+                                    logger.error(traceback.format_exc())
+                                    # Hata durumunda ham içeriği göster
                                     final_response = clean_json_text(str(content))
-                            except Exception as e:
-                                logger.error(f"Yanıt ayrıştırma hatası: {str(e)}")
-                                logger.error(traceback.format_exc())
-                                # Hata durumunda ham içeriği göster
-                                final_response = clean_json_text(str(content))
 
-                        st.session_state.conversation.append(("assistant", final_response or "Anlayamadım ama yardımcı olmaya çalışırım."))
+                            st.session_state.conversation.append(("assistant", final_response or "Anlayamadım ama yardımcı olmaya çalışırım."))
+                            st.rerun()
+                    except anyio.ClosedResourceError:
+                        logger.error(f"ClosedResourceError: Bağlantı kaynak hatası")
+                        st.session_state.connection_active = False
+                        st.session_state.conversation.append(("assistant", "Bağlantı hatası oluştu. Lütfen sorunuzu tekrar sorun."))
                         st.rerun()
-                except anyio.ClosedResourceError:
-                    logger.error(f"ClosedResourceError: Bağlantı kaynak hatası")
-                    st.session_state.connection_active = False
-                    st.session_state.conversation.append(("assistant", "Bağlantı hatası oluştu. Lütfen sorunuzu tekrar sorun."))
-                    st.rerun()
-                except Exception as e:
-                    logger.exception(f"İşlem sırasında hata: {e}")
-                    st.session_state.conversation.append(("assistant", f"Üzgünüm, bir hata oluştu: {str(e)}"))
-                    st.rerun()
+                    except Exception as e:
+                        logger.exception(f"İşlem sırasında hata: {e}")
+                        st.session_state.conversation.append(("assistant", f"Üzgünüm, bir hata oluştu: {str(e)}"))
+                        st.rerun()
 
 async def main():
     """Ana uygulama akışı"""
