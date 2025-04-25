@@ -7,7 +7,9 @@ import asyncio
 from contextlib import AsyncExitStack, asynccontextmanager
 from dotenv import load_dotenv
 import httpx
+import json
 from fastapi import APIRouter, Request, Response
+from fastapi.responses import JSONResponse
 from langchain_core.messages import HumanMessage
 
 # MCP entegrasyonu için gerekli modüller
@@ -36,6 +38,21 @@ ITERATIONS = 40
 
 # Son işlenen mesajın ID'sini izlemek için
 last_processed_message_id = None
+
+# Test endpoint - Basit JSON yanıtı döner
+@whatsapp_router.get("/foo")
+async def test_endpoint():
+    """Test amaçlı basit bir endpoint."""
+    return JSONResponse(content={
+        "status": "success",
+        "message": "Test endpoint çalışıyor!",
+        "data": {
+            "server": SERVER,
+            "model": MODEL,
+            "whatsapp_enabled": bool(WHATSAPP_PHONE_NUMBER_ID),
+            "timestamp": asyncio.get_event_loop().time()
+        }
+    })
 
 # MCP oturumunu bağlam yöneticisi olarak kullan
 @asynccontextmanager
