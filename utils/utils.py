@@ -45,38 +45,6 @@ def check_for_content(var):
         var
 
 
-# def custom_print(message, stdscr=None):
-#     if stdscr:
-#         max_y, max_x = stdscr.getmaxyx()
-#         max_y -= 2  # Leave room for a status line at the bottom
-
-#         lines = message.split("\n")
-#         for line in lines:
-#             wrapped_lines = wrap(line, max_x)
-#             for wrapped_line in wrapped_lines:
-#                 current_y, current_x = stdscr.getyx()
-#                 if current_y >= max_y:
-#                     stdscr.addstr(max_y, 0, "-- More --")
-#                     stdscr.refresh()
-#                     key = stdscr.getch()  # Wait for user to press a key
-
-#                     if key == ord('q'):
-#                         stdscr.clear()
-#                         stdscr.addstr(0, 0, "Exiting...")
-#                         stdscr.refresh()
-#                         return
-
-#                     stdscr.clear()
-#                     current_y = 0
-
-#                 stdscr.addstr(current_y, 0, wrapped_line[:max_x])
-#                 stdscr.addstr(current_y + 1, 0, "")  # Move to the next line
-#                 stdscr.refresh()
-
-#         stdscr.refresh()
-#     else:
-#         print(message)
-
 def custom_print(message, stdscr=None, scroll_pos=0):
     if stdscr:
         max_y, max_x = stdscr.getmaxyx()
@@ -153,3 +121,6 @@ def create_tool_description(tools=None):
             
         tools_description += "Müşterinin talebi doğrultusunda uygun aracı seç ve kullan. Eğer araç kullanımı gerekli değilse, bilgiyi doğrudan sağla."
         return tools_description
+
+
+

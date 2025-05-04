@@ -28,7 +28,7 @@ def safe_parse_message(message_content):
         if isinstance(message_content, str):
             # Yanıt zaten JSON değilse, doğrudan yanıt olarak döndür
             if not (message_content.strip().startswith('{') or message_content.strip().startswith('[')):
-                logger.info("JSON olmayan metin yanıtı tespit edildi, JSON çözümleme atlanıyor")
+                logger.debug("JSON olmayan metin yanıtı tespit edildi, JSON çözümleme atlanıyor")
                 return {"response": message_content}
             
             # JSON benzeri içerik ancak muhtemelen basit metin yanıtı
@@ -43,7 +43,7 @@ def safe_parse_message(message_content):
             content_lower = message_content.lower()
             if (not any(keyword in content_lower for keyword in reservation_keywords) and
                 not (message_content.strip().startswith('{') and message_content.strip().endswith('}'))):
-                logger.info("Rezervasyon içermeyen düz metin yanıtı tespit edildi")
+                logger.debug("Rezervasyon içermeyen düz metin yanıtı tespit edildi")
                 return {"response": message_content}
             
             # Emoji ve gereksiz karakterleri temizle
@@ -210,9 +210,10 @@ def render_message_form():
     
     with st.form(key="chat_form", clear_on_submit=True):
         user_message = st.text_input(
-            label="",
+            label="Kullanıcı Mesaj Girişi",
             key="user_message",
-            placeholder="Nasıl yardımcı olabilirim? Rezervasyon yapmak, bilgi almak için yazın..."
+            placeholder="Nasıl yardımcı olabilirim? Rezervasyon yapmak, bilgi almak için yazın...",
+            label_visibility="collapsed"
         )
 
         cols = st.columns([5, 3, 3])

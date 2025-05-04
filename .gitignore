@@ -32,7 +32,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
-
+wsgi.py
 # IDE ayarları
 .idea/
 .vscode/

@@ -5,14 +5,14 @@ Ajan sınıfları ve yapılandırmaları.
 """
 
 from agents.agents import (
-    UnderstandingAgent,
+    MemoryExtractionAgent,
     ReservationAgent,
     SupportAgent,
     Agent
 )
 
 __all__ = [
-    "UnderstandingAgent",
+    "MemoryExtractionAgent",
     "ReservationAgent",
     "SupportAgent",
     "Agent"

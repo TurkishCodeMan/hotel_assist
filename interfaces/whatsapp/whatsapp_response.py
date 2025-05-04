@@ -28,7 +28,7 @@ whatsapp_router = APIRouter()
 # WhatsApp API credentials
 WHATSAPP_TOKEN ="EAAmYmKdWEsMBOxbnOZCZBNXRXpS4ZCLLdaZBIZAD2w7cCgKfo4kIYq3QEfIw5Hnl5FhSsq3f272wOI6mBVxj6oF1GeguM1jc27rKWjDf4RjDSAhZCdg1j8zw3LzmgfuhWedCj8B2HXgJ9zzOxQpxNnO4nWVxfyu5sNumSsbZArAJdIMJf6eGmbcs2N43QBW9ZC5JAZBtDZBVnIpW13qE7pvIW6RmVr9zPSvGLGbLkZD"
 WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID")
-MCP_SHEET_PATH = os.getenv("MCP_SHEET_PATH", "/Users/huseyin/Documents/deep-learning/wp_agent/google-sheets-mcp/sheet.py")
+MCP_SHEET_PATH = os.getenv("MCP_SHEET_PATH", "/Users/huseyin/Documents/deep-learning/wp_agent/mcp_servers/google-sheets-mcp/sheet.py")
 
 # MCP ayarları
 SERVER = "gemini"
