@@ -400,9 +400,9 @@ async def display_main_ui(state):
                     async for event in workflow.astream(dict_inputs, {"recursion_limit": iterations}):
                         last_event = event
 
-                    if last_event and "end" in last_event:
+                    if last_event and "final_node" in last_event:
                         # Graph'tan dönen son state'i kaydet
-                        st.session_state.session_state = last_event["end"]
+                        st.session_state.session_state = last_event["final_node"]
                         logger.debug(f"Graph'tan dönen son state: {st.session_state.session_state}")
                         
                         final_response = ""

@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 from langchain_core.messages import HumanMessage
 from langgraph.graph import StateGraph
 
-from agents.agents import ReservationAgent, MemoryExtractionAgent
+from agents.agents import ReservationAgent, MemoryExtractionAgent, MemoryInjectionAgent
 from agents.tools_agents import (
     EndNodeAgent
 )
@@ -23,8 +23,8 @@ def create_graph(server=None, model=None, stop=None, model_endpoint=None, temper
         stop: Durdurma belirteçleri
         model_endpoint: Model endpoint URL'si
         temperature: Sıcaklık değeri
-        tools: MCP araçları listesi
-        session: MCP oturumu
+        tools: MCP araçları listesi (artık agent_mcp_config içinde)
+        session: MCP oturumu (artık agent_mcp_config içinde)
         agent_mcp_config: Ajan-MCP eşleştirme yapılandırması (opsiyonel)
     
     Returns:
@@ -33,35 +33,49 @@ def create_graph(server=None, model=None, stop=None, model_endpoint=None, temper
     graph = StateGraph(AgentGraphState)
     
     # Varsayılan agent-MCP yapılandırması
+    # MemoryInjectionAgent için de varsayılanlar eklenebilir
     default_agent_config = {
         "reservation_agent": {
             "server": server,
             "model": model,
             "model_endpoint": model_endpoint,
-            "tools": None,
-            "session": session
+            "tools": None, # Araçlar ilgili agent'a özel olmalı
+            "session": session # Session ilgili agent'a özel olmalı
         },
         "memory_extraction_agent": {
-            "server": "groq",
-            "model": "llama-3.1-8b-instant",  # Groq tarafından desteklenen bir model
+            "server": "groq", # Hafıza çıkarımı için farklı model/server
+            "model": "llama-3.1-8b-instant",
             "model_endpoint": model_endpoint,
             "tools": None,
-            "session": None
+            "session": None # Hafıza çıkarımının kendi session'ı olmayabilir
+        },
+        "memory_injection_agent": {
+            "server": server, # Anı analizi için ana modeli kullanabilir
+            "model": model, 
+            "model_endpoint": model_endpoint,
+            "tools": None,
+            "session": None # Session gerektirmez
         }
     }
     
-    # Verilen yapılandırma ile varsayılanı birleştir (verilen değerler önceliklidir)
+    # Verilen yapılandırma ile varsayılanı birleştir
     agent_config = default_agent_config
     if agent_mcp_config:
         for agent_name, config in agent_mcp_config.items():
             if agent_name in agent_config:
-                agent_config[agent_name].update(config)
+                # Mevcut config üzerine yazarken None değerlerini atlama
+                merged_config = {k: v for k, v in config.items() if v is not None}
+                agent_config[agent_name].update(merged_config)
             else:
                 agent_config[agent_name] = config
 
-    # ----- Async Düğümler -----
+    # ----- Async Düğümler ------
     async def reservation_agent_node(state):
         cfg = agent_config.get("reservation_agent", {})
+        # Reservation agent'a state içindeki memory context'i de verebiliriz
+        # Örneğin prompt'a ekleyerek:
+        # memory_ctx = state.get("retrieved_memories_context", "")
+        # formatted_prompt = RESERVATION_SYSTEM_PROMPT.format(..., memory_context=memory_ctx)
         return await ReservationAgent(
             state=state,
             model=cfg.get("model", model),
@@ -70,34 +84,49 @@ def create_graph(server=None, model=None, stop=None, model_endpoint=None, temper
             stop=stop,
             guided_json=None,
             temperature=temperature,
-            session=cfg.get("session", session),
+            session=cfg.get("session"), # Agent config'den al
         ).invoke(
-            research_question=state['research_question'],
+            research_question=state.get('research_question'),
             conversation_state=state,
-            prompt=RESERVATION_SYSTEM_PROMPT,
-            tools=cfg.get("tools", None),
-            feedback=None,
+            tools=cfg.get("tools"),
+            feedback=state.get('memory_injection_response')
         )
     
     async def memory_extraction_node(state):
         cfg = agent_config.get("memory_extraction_agent", {})
-        print(cfg,"cfg")
+        # cfg loglaması kaldırıldı
+        # print(cfg,"cfg") 
         return await MemoryExtractionAgent(
             state=state,
             model=cfg.get("model", model),
-            server=cfg.get("server", "groq"),  # Memory için varsayılan olarak groq
+            server=cfg.get("server", "groq"),
             model_endpoint=cfg.get("model_endpoint", model_endpoint),
             stop=stop,
             guided_json=None,
             temperature=temperature,
-            session=cfg.get("session", session)
+            session=cfg.get("session")
         ).invoke(
-            research_question=state['research_question'],
+            research_question=state.get('research_question'),
             conversation_state=state,
-            prompt=MEMORY_ANALYSIS_PROMPT,
-            tools=cfg.get("tools", None),
-            feedback=None,
             vector_store=get_vector_store()
+        )
+        
+    # Memory Injection Node
+    async def memory_injection_node(state):
+        cfg = agent_config.get("memory_injection_agent", {})
+        return await MemoryInjectionAgent(
+            state=state, # State'i ajana başlatırken ver
+            model=cfg.get("model", model),
+            server=cfg.get("server", server),
+            model_endpoint=cfg.get("model_endpoint", model_endpoint),
+            stop=stop,
+            guided_json=None,
+            temperature=temperature,
+            session=cfg.get("session")
+        ).invoke(
+            vector_store=get_vector_store(),
+            num_memories=cfg.get("num_memories", 3),  # Varsayılan 3 anı
+            conversation_state=state  # State'i invoke'a geç
         )
 
     async def end_node(state):
@@ -108,20 +137,23 @@ def create_graph(server=None, model=None, stop=None, model_endpoint=None, temper
         ).invoke()
 
     # ----- Düğümleri ekle -----
-    graph.add_node("reservation_agent", reservation_agent_node)
     graph.add_node("memory_extraction_agent", memory_extraction_node)
-    graph.add_node("end", end_node)
+    graph.add_node("memory_injection_agent", memory_injection_node) # Yeni düğümü ekle
+    graph.add_node("reservation_agent", reservation_agent_node)
+    graph.add_node("final_node", end_node)
 
-    # Giriş ve çıkış noktaları
+    # ----- Akış Yönleri (Kenarlar) -----
     graph.set_entry_point("memory_extraction_agent")
-    graph.set_finish_point("end")
+    graph.set_finish_point("final_node")
     
-    # MemoryExtractionAgent'tan ReservationAgent'a kenar ekle
-    graph.add_edge("memory_extraction_agent", "reservation_agent")
-    
-    # Kenarlar (akış yönleri)
-    graph.add_edge("reservation_agent", "end")
+    # Güncellenmiş akış:
+    # memory_extraction -> memory_injection -> reservation -> final_node
+    graph.add_edge("memory_extraction_agent", "memory_injection_agent")
+    graph.add_edge("memory_injection_agent", "reservation_agent")
+    graph.add_edge("reservation_agent", "final_node")
 
+    # Eski kenar kaldırıldı:
+    # graph.add_edge("memory_extraction_agent", "reservation_agent")
   
     return graph
 

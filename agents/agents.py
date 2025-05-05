@@ -473,9 +473,8 @@ class ReservationAgent(Agent):
             # Geri bildirim değerini hazırla    
             feedback_value = feedback() if callable(feedback) else feedback
             feedback_value = check_for_content(feedback_value)
-            
             # Prompt formatla
-            formatted_prompt = self._prepare_reservation_prompt(conversation_state, tools, prompt)
+            formatted_prompt = self._prepare_reservation_prompt(conversation_state, tools, prompt,feedback_value)
             
             # Mesajları hazırla
             messages = [
@@ -499,7 +498,8 @@ class ReservationAgent(Agent):
         self, 
         conversation_state: Dict[str, Any], 
         tools=None, 
-        prompt_template: str = RESERVATION_SYSTEM_PROMPT
+        prompt_template: str = RESERVATION_SYSTEM_PROMPT,
+        feedback=None
     ) -> str:
         """
         Rezervasyon promptunu hazırlar.
@@ -513,12 +513,9 @@ class ReservationAgent(Agent):
             Formatlanmış prompt
         """
         return prompt_template.format(
-            reservations_result=conversation_state.get('reservations_result', []),
-            add_reservation_result=conversation_state.get('add_reservation_result', []),
-            update_reservation_result=conversation_state.get('update_reservation_result', []),
-            delete_reservation_result=conversation_state.get('delete_reservation_result', []),
             chat_history=conversation_state.get('messages'),
-            tools_description=create_tool_description(tools)
+            tools_description=create_tool_description(tools),
+            memory_context=feedback
         )
     
     async def _get_reservation_response(
@@ -634,3 +631,101 @@ class ReservationAgent(Agent):
         return self.state
 
 
+class MemoryInjectionAgent(Agent):
+    """
+    Sohbet geçmişine dayanarak ilgili anıları vektör deposundan alır
+    ve state'e formatlanmış bir metin olarak ekler.
+    """
+    async def invoke(
+        self,
+        conversation_state: Dict[str, Any],
+        vector_store=None,
+        num_memories: int = 3 # Alınacak anı sayısı (varsayılan 3)
+    ) -> Dict[str, Any]:
+        """
+        İlgili anıları alır ve state'i günceller.
+
+        Args:
+            conversation_state: Konuşma durumu
+            vector_store: Kullanılacak vektör depolama nesnesi
+            num_memories: Vektör deposundan alınacak en ilgili anı sayısı
+
+        Returns:
+            Güncellenmiş state sözlüğü
+        """
+        logger.info("MemoryInjectionAgent invoke edildi.")
+
+        try:
+            # Vector store kontrolü
+            if vector_store is None:
+                logger.info("MemoryInjectionAgent: Vector store sağlanmadı, anı alınamıyor.")
+                self.state["memory_injection_response"] = "Anı deposuna erişilemedi."
+                return self.state
+
+            # Conversation state'den mesajları al
+            messages = conversation_state.get("messages", [])
+            if not messages:
+                logger.info("MemoryInjectionAgent: Conversation state içinde mesaj bulunamadı.")
+                self.state["memory_injection_response"] = "Sohbet geçmişi boş."
+                return self.state
+
+            # Son N mesajdan bağlam oluştur
+            context_messages = messages[-3:]
+            recent_context = " ".join([
+                getattr(m, 'content', str(m) if not isinstance(m, dict) else m.get('content', ''))
+                for m in context_messages
+            ]).strip()
+
+            if not recent_context:
+                logger.info("MemoryInjectionAgent: Anı almak için geçerli bir bağlam oluşturulamadı.")
+                self.state["memory_injection_response"] = "İlgili geçmiş bilgi bulunamadı."
+                return self.state
+
+            logger.info(f"MemoryInjectionAgent: Anı arama bağlamı: '{recent_context[:100]}...'")
+
+            # Vektör deposundan ilgili anıları güvenli şekilde al
+            retrieved_memories = safe_execute(
+                vector_store.search_memories,
+                error_cls=VectorStoreError,
+                args=(recent_context,),
+                kwargs={'k': num_memories},
+                reraise=False
+            )
+
+            if retrieved_memories is None:
+                logger.error("MemoryInjectionAgent: Vektör deposundan anı alınırken hata oluştu.")
+                retrieved_memories = []
+
+            # Alınan anıları formatla
+            memory_texts = [m.text for m in retrieved_memories if hasattr(m, 'text')]
+            formatted_context = self._format_memories_for_prompt(memory_texts)
+            logger.info(f"MemoryInjectionAgent: Formatlanmış anı bağlamı: '{formatted_context[:100]}...'")
+
+            # State'i güncelle
+            self.state["memory_injection_response"] = formatted_context
+            return self.state
+
+        except Exception as e:
+            error_msg = f"MemoryInjectionAgent hatası: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            self.state["memory_injection_response"] = f"Hata: Anılar işlenirken sorun oluştu."
+            return self.state
+
+    def _format_memories_for_prompt(self, memories: List[str]) -> str:
+        """
+        Alınan anıları state'e eklemek veya prompt'ta kullanmak için formatlar.
+        
+        Args:
+            memories: Anı metinlerinin listesi.
+
+        Returns:
+            Formatlanmış anı metni.
+        """
+        if not memories:
+            return "İlgili geçmiş bilgi bulunamadı."
+            
+        # Anıları madde işaretleri ile formatla
+        formatted = "Geçmişten Hatırlanan İlgili Bilgiler:\n"
+        formatted += "\n".join(f"- {memory.strip()}" for memory in memories)
+        return formatted
+    

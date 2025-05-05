@@ -82,33 +82,3 @@ def get_logger(name: str) -> logging.Logger:
     return _manager.get_logger(name)
 
 
-# Create standard logging functions
-def log_info(logger: Union[str, logging.Logger], message: str, **kwargs):
-    """Log an info message."""
-    if isinstance(logger, str):
-        logger = get_logger(logger)
-    logger.info(message, **kwargs)
-
-
-def log_error(logger: Union[str, logging.Logger], message: str, exc_info=None, **kwargs):
-    """Log an error message with optional exception information."""
-    if isinstance(logger, str):
-        logger = get_logger(logger)
-    if exc_info:
-        logger.error(message, exc_info=exc_info, **kwargs)
-    else:
-        logger.error(message, **kwargs)
-
-
-def log_warning(logger: Union[str, logging.Logger], message: str, **kwargs):
-    """Log a warning message."""
-    if isinstance(logger, str):
-        logger = get_logger(logger)
-    logger.warning(message, **kwargs)
-
-
-def log_debug(logger: Union[str, logging.Logger], message: str, **kwargs):
-    """Log a debug message."""
-    if isinstance(logger, str):
-        logger = get_logger(logger)
-    logger.debug(message, **kwargs) 
